@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Smart Campus Network Monitor & Analyzer — by Vinay & Saich</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <style>
+    :root{
+      --bg:#050505; --panel:#0c0c15; --accent:#7c3aed; --green:#00ff88; --text:#e6fff2;
+      --muted:#aaa; --card:#121616; --yellow:#ffc107; --red:#ff4444;
+    }
+    body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui}
+    header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#090912;border-bottom:1px solid #222}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg,var(--accent),var(--green));
+      display:flex;align-items:center;justify-content:center;font-weight:900;font-size:22px;color:#fff}
+    nav{display:flex;gap:14px;padding:10px 20px;background:#0b0b14}
+    nav a{color:var(--muted);text-decoration:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+    nav a.active{background:rgba(124,58,237,0.15);color:var(--green)}
+    main{padding:20px;max-width:1300px;margin:auto}
+    .panel{background:var(--panel);padding:16px;border-radius:12px;margin-bottom:18px;box-shadow:0 0 12px #0004}
+    .controls{display:flex;gap:10px;align-items:center}
+    button{background:linear-gradient(180deg,var(--green),#00b060);border:none;color:#000;padding:9px 14px;
+      border-radius:8px;cursor:pointer;font-weight:700;transition:.2s}
+    button:hover{transform:scale(1.05)}
+    .ghost{background:transparent;border:1px solid #333;color:var(--text)}
+    .statgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .stat{background:#101018;padding:12px;border-radius:10px;text-align:center}
+    .device-card{border-bottom:1px solid #222;padding:8px 0}
+    .dot{height:10px;width:10px;border-radius:50%;display:inline-block;margin-right:6px}
+    .usage-bar{height:8px;border-radius:4px;margin-top:4px}
+    #map{height:500px;border-radius:12px}
+    #alertsDropdown{position:absolute;right:20px;top:70px;background:#111;border:1px solid #333;
+      padding:10px;border-radius:8px;display:none;width:260px;max-height:300px;overflow:auto}
+    #alertsDropdown div{padding:6px 0;border-bottom:1px solid #222;font-size:13px}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">SN</div>
+      <div>
+        <div style="font-weight:900">Smart Campus Network Monitor</div>
+        <div style="font-size:12px;color:var(--muted)">by <b>Vinay</b> &amp; <b>Saich</b></div>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="btnCapture">📡 Capture</button>
+      <button class="ghost" id="btnRefresh">🔁 Refresh</button>
+      <button class="ghost" onclick="exportData('csv')">⬇️ CSV</button>
+      <button class="ghost" onclick="exportData('xlsx')">⬇️ Excel</button>
+      <button class="ghost" onclick="exportData('pdf')">⬇️ PDF</button>
+      <div style="position:relative">
+        <button id="btnAlerts" class="ghost">🔔</button>
+        <div id="alertsDropdown"></div>
+      </div>
+      <a href="/logout" class="ghost">Logout</a>
+    </div>
+  </header>
+
+  <nav>
+    <a class="active" data-tab="dashboard">Dashboard</a>
+    <a data-tab="devices">Devices</a>
+    <a data-tab="domains">Domains</a>
+    <a data-tab="map">Map</a>
+    <a data-tab="about">About</a>
+  </nav>
+
+  <main>
+    <!-- Dashboard -->
+    <section id="dashboard" class="panel">
+      <div class="statgrid">
+        <div class="stat"><div id="statDevices">—</div><div style="font-size:12px;color:var(--muted)">Devices</div></div>
+        <div class="stat"><div id="statUsage">—</div><div style="font-size:12px;color:var(--muted)">Total KB</div></div>
+        <div class="stat"><div id="statAlerts">—</div><div style="font-size:12px;color:var(--muted)">Alerts</div></div>
+        <div class="stat"><div id="statTrusted">—</div><div style="font-size:12px;color:var(--muted)">Trusted</div></div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h3>Usage per Device</h3>
+        <canvas id="usageChart" height="150"></canvas>
+      </div>
+    </section>
+
+    <!-- Devices -->
+    <section id="devices" class="panel" style="display:none">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="filterIp" placeholder="IP">
+        <input id="filterDomain" placeholder="Domain">
+        <input id="filterMac" placeholder="MAC">
+        <input id="filterHost" placeholder="Hostname">
+        <select id="selSort">
+          <option value="usage">Sort: usage</option>
+          <option value="ip">Sort: IP</option>
+        </select>
+        <button onclick="refreshData()">Apply</button>
+      </div>
+      <div id="deviceList">No devices</div>
+    </section>
+
+    <!-- Domains -->
+    <section id="domains" class="panel" style="display:none">
+      <h3>Queried Domains</h3>
+      <div id="domainList">No data</div>
+    </section>
+
+    <!-- Map -->
+    <section id="map" style="display:none"></section>
+
+   <!-- Expanded About section for Smart Campus Network Monitor & Analyzer -->
+<section id="about" class="panel about" style="display:none">
+  <h2>About — Smart Campus Network Monitor &amp; Analyzer</h2>
+
+  <p>
+    <strong>Smart Campus Network Monitor &amp; Analyzer</strong> is a lightweight, local-first toolkit that captures short packet
+    snapshots from your machine's network interface (via <code>tshark</code>), aggregates per-device usage, records recent DNS
+    queries, and raises threshold-based alerts by email. It is built to be privacy-respecting (data stays on your laptop) and
+    easy to run on a development machine or small hotspot. ✅🔒
+  </p>
+
+  <h3>What this app consists of — at a glance 🧩</h3>
+  <ul>
+    <li>Frontend: Flask-served HTML/CSS/JS dashboard (the UI you see) — buttons for <b>Capture Now</b>, filters, charts, and lists. 🎯</li>
+    <li>Server: <code>app.py</code> — Flask routes to trigger captures, return aggregated data, handle login, and send alerts. 🧠</li>
+    <li>Capture worker: <code>network_monitor.py</code> — runs short <code>tshark</code> captures, parses output, aggregates usage &amp; DNS. ⚙️</li>
+    <li>External tool: <code>tshark</code> (part of Wireshark) — used for packet sniffing in short snapshots. 🛰️</li>
+  </ul>
+
+  <h3>Architecture diagram (visualized) 🖼️</h3>
+  <!-- Simple inline SVG flow diagram -->
+  <svg width="100%" height="220" viewBox="0 0 1000 220" style="background:transparent">
+    <rect x="18" y="20" width="260" height="80" rx="10" fill="#07120f" stroke="#08302a"></rect>
+    <text x="36" y="48" fill="#9df3c9" font-family="monospace" font-size="12">Laptop (Flask web app)</text>
+    <text x="36" y="66" fill="#aab" font-family="monospace" font-size="11">app.py • templates • static</text>
+
+    <rect x="370" y="20" width="260" height="80" rx="10" fill="#071120" stroke="#204020"></rect>
+    <text x="388" y="48" fill="#a6ffd2" font-family="monospace" font-size="12">network_monitor.py</text>
+    <text x="388" y="66" fill="#aab" font-family="monospace" font-size="11">tshark invoker • parser • aggregator</text>
+
+    <rect x="720" y="20" width="260" height="80" rx="10" fill="#071120" stroke="#41102a"></rect>
+    <text x="738" y="48" fill="#ffd1e6" font-family="monospace" font-size="12">Client Devices</text>
+    <text x="738" y="66" fill="#aab" font-family="monospace" font-size="11">phones, laptops, IoT on hotspot</text>
+
+    <path d="M278 60 H370" stroke="#5ef0b2" stroke-width="2" marker-end="url(#arr)"></path>
+    <path d="M630 60 H720" stroke="#5ef0b2" stroke-width="2" marker-end="url(#arr)"></path>
+
+    <defs>
+      <marker id="arr" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L6,3 z" fill="#5ef0b2"></path>
+      </marker>
+    </defs>
+  </svg>
+
+  <h3>How a capture works — step by step 🔎</h3>
+  <ol>
+    <li><b>User clicks</b> <code>POST /capture</code> (the "Capture Now" button). 📡</li>
+    <li>Flask handler triggers a short (<code>--duration 5</code> seconds) <code>tshark</code> invocation via <code>network_monitor.py</code>. ⏱️</li>
+    <li><code>tshark</code> is run with two quick filters: one to collect frame lengths grouped by source IP (usage) and one to capture DNS queries. 🧾</li>
+    <li><code>network_monitor.py</code> parses the textual output into Python data structures: devices (IP, MAC, hostname), per-IP usage (KB), and domains per device. 🐍</li>
+    <li>Aggregated snapshot is returned to Flask and stored in-memory (or on-disk short cache). Flask responds to <code>/data</code> requests with the latest snapshot. 📤</li>
+    <li>Frontend fetches <code>/data</code>, updates the chart, device list, domains and alerts. 📈</li>
+  </ol>
+
+  <h3>Program explanations — condensed but complete (readable) 🧾💡</h3>
+
+  <h4><code>app.py</code> — responsibilities</h4>
+  <pre>
+  - Serve templates: index, login.
+  - Provide routes:
+      GET / -> index.html (protected)
+      POST /login -> authenticate (simple session)
+      POST /capture -> trigger a capture (calls network_monitor.capture_once())
+      GET /data -> return last snapshot JSON
+      GET /logout -> remove session
+  - Alerts: after aggregation, check device usage against configured threshold (KB). If exceeded, send an email via SMTP.
+  - Keep a small circular in-memory cache of the last snapshot.
+  </pre>
+
+  <h4><code>network_monitor.py</code> — responsibilities</h4>
+  <pre>
+  - Provides capture_once(duration=5):
+      * Build tshark commands (frame length per source, dns queries)
+      * Run subprocess with timeout
+      * Parse output lines into dicts: usage_by_ip, dns_by_ip
+      * Try to resolve friendly hostnames using socket.gethostbyaddr or local ARP table
+      * Return structured snapshot: { devices:[{ip, mac, hostname, usage_kb, domains}], usage:{ip:kb}, alerts:[] }
+  - Lightweight: avoids heavy pcap libs so it can run on low-resource systems.
+  </pre>
+
+  <h3>Key implementation notes &amp; tips 🛠️</h3>
+  <ul>
+    <li>Run the app as root or grant <code>tshark</code> capture privileges (on Linux, add user to <code>wireshark</code> group or setcap). ⚠️</li>
+    <li>Tune duration: 3–10s is usually enough for a snapshot; longer will collect more traffic but costs time and disk. ⏳</li>
+    <li>DNS parsing: only passive observation — domains are what the client queried, not full URLs. Use SNI and DNS for best insights. 🌐</li>
+    <li>Privacy: do not run on networks you do not own. This tool records metadata (IPs, domains), which may be sensitive. 🔐</li>
+  </ul>
+
+  <h3>Example JSON snapshot (what <code>/data</code> returns) 📦</h3>
+  <pre>{
+  "timestamp": "2025-09-03T12:34:56Z",
+  "usage": { "192.168.10.4": 1224.4, "192.168.10.7": 512.8 },
+  "devices": [
+    { "ip":"192.168.10.4","mac":"aa:bb:cc:11:22:33","hostname":"phone-joe","usage_kb":1224.4, "domains":["youtube.com","google.com"] },
+    { "ip":"192.168.10.7","mac":"aa:bb:cc:44:55:66","hostname":"laptop","usage_kb":512.8, "domains":["github.com"] }
+  ],
+  "alerts": ["192.168.10.4 exceeded 1000 KB threshold" ]
+  }</pre>
+
+  <h3>Alerting logic 🔔</h3>
+  <p>
+    Alerts are evaluated at aggregation time. For every device, if <code>usage_kb &gt; configured_threshold_kb</code>, the snapshot includes an alert string and
+    <code>app.py</code> can optionally send an email (via SMTP) with the alert summary. Keep SMTP credentials in environment variables (avoid hard-coding). ✉️
+  </p>
+
+  <h3>Troubleshooting checklist 🧰</h3>
+  <ul>
+    <li><b>Capture returns empty data:</b> confirm <code>tshark</code> is installed and the capture interface is correct. Run a manual tshark command to check. 🖥️</li>
+    <li><b>Hostnames show as IPs:</b> ARP/successful reverse DNS may not exist for all devices — that's expected. Try mDNS/NetBIOS lookups for friendly names. 🧭</li>
+    <li><b>Flask returns 403 on /capture:</b> ensure session/auth and CSRF (if used) are configured correctly. 🔐</li>
+    <li><b>Email not sending:</b> check SMTP settings, test credentials with a simple Python smtplib test. 🔑</li>
+  </ul>
+
+  <h3>Small code snippets — copy/paste friendly snippets 🧩</h3>
+  <pre>
+  # small-ish pseudocode for capture runner (network_monitor.py)
+  def capture_once(duration=5):
+      cmd_usage = ["tshark","-a","duration:%d"%duration,"-T","fields","-e","ip.src","-e","frame.len","-Y","ip && frame.len"]
+      cmd_dns = ["tshark","-a","duration:%d"%duration,"-T","fields","-e","ip.src","-e","dns.qry.name","-Y","dns.qry.name"]
+      out1 = subprocess.check_output(cmd_usage, text=True)
+      out2 = subprocess.check_output(cmd_dns, text=True)
+      # parse out1/out2 -> aggregate usage_by_ip and dns_by_ip
+      return snapshot
+  </pre>
+
+  <h3>Deployment &amp; permissions checklist ✅</h3>
+  <ul>
+    <li>Install tshark (OS package manager).</li>
+    <li>Add your user to the <code>wireshark</code> group or run with sufficient privileges.</li>
+    <li>Set SMTP credentials via environment vars for safe email alerts.</li>
+    <li>Run Flask behind a local reverse proxy if you want to expose only specific routes. 🔁</li>
+  </ul>
+
+  <h3>Final notes &amp; credits 👏</h3>
+  <p>
+    This tool is intentionally minimal and local-first — great for labs, demos, or small campus setups. Built and maintained by
+    <b>Vinay</b> &amp; <b>Saich</b>. If you want, I can also: provide a complete ready-to-run <code>app.py</code> and <code>network_monitor.py</code>,
+    or add a small persistent SQLite store to keep historical snapshots. Would you like that next? 🔧🙂
+  </p>
+</section>
+
+  </main>
+
+  <script>
+    let usageChart=null; let map=null;
+
+    // Tabs
+    document.querySelectorAll('nav a').forEach(a=>{
+      a.addEventListener('click', e=>{
+        document.querySelectorAll('nav a').forEach(x=>x.classList.remove('active'));
+        e.target.classList.add('active');
+        const tab = e.target.getAttribute('data-tab');
+        document.querySelectorAll('main section').forEach(s=>s.style.display='none');
+        if(tab==="map"){ document.getElementById(tab).style.display='block'; initMap(); refreshData(); }
+        else document.getElementById(tab).style.display='block';
+      });
+    });
+
+    // Alerts dropdown
+    document.getElementById("btnAlerts").onclick=()=>{
+      let dd=document.getElementById("alertsDropdown");
+      dd.style.display = dd.style.display==="block"?"none":"block";
+    };
+
+    function buildChart(labels,values,colors){
+      const ctx=document.getElementById('usageChart').getContext('2d');
+      if(usageChart) usageChart.destroy();
+      usageChart=new Chart(ctx,{type:'bar',
+        data:{labels:labels,datasets:[{label:'KB',data:values,backgroundColor:colors}]},
+        options:{plugins:{legend:{display:false}}}});
+    }
+
+    async function refreshData(){
+      const ip=document.getElementById('filterIp')?.value||'';
+      const domain=document.getElementById('filterDomain')?.value||'';
+      const mac=document.getElementById('filterMac')?.value||'';
+      const host=document.getElementById('filterHost')?.value||'';
+      const url=`/data?ip=${ip}&domain=${domain}&mac=${mac}&host=${host}`;
+      const res=await fetch(url); const data=await res.json();
+
+      // Stats
+      document.getElementById('statDevices').innerText=(data.devices||[]).length;
+      document.getElementById('statUsage').innerText=Object.values(data.usage||{}).reduce((a,b)=>a+b,0).toFixed(1);
+      document.getElementById('statAlerts').innerText=(data.alerts||[]).length;
+      document.getElementById('statTrusted').innerText=(data.devices||[]).filter(d=>d.trusted).length;
+
+      // Alerts dropdown
+      let dd=document.getElementById('alertsDropdown'); dd.innerHTML='';
+      (data.alerts||[]).forEach(a=>{let el=document.createElement('div'); el.textContent=a; dd.appendChild(el); showNotification(a); });
+
+      // Chart
+      const labels=Object.keys(data.usage||{});
+      const values=labels.map(k=>data.usage[k]);
+      const colors=values.map(v=>v>1000?'#ff4444':v>500?'#ffc107':'#00ff88');
+      buildChart(labels,values,colors);
+
+      // Devices
+      const list=document.getElementById('deviceList'); list.innerHTML='';
+      (data.devices||[]).forEach(d=>{
+        const div=document.createElement('div'); div.className='device-card';
+        const dotColor=d.online?'#00ff88':'#777';
+        const usageColor=d.usage_kb>1000?'var(--red)':d.usage_kb>500?'var(--yellow)':'var(--green)';
+        div.innerHTML=`<div><span class="dot" style="background:${dotColor}"></span>
+                        <b>${d.ip}</b> (${d.hostname||"Unknown"}) 
+                        <button onclick="blockDevice('${d.ip}')">🚫</button>
+                        <button onclick="renameDevice('${d.ip}')">✏️</button>
+                        <button onclick="trustDevice('${d.ip}')">⭐</button></div>
+                        <div style="font-size:13px;color:var(--muted)">MAC: ${d.mac||"—"} • ${d.usage_kb.toFixed(1)} KB</div>
+                        <div class="usage-bar" style="background:${usageColor};width:${Math.min(100,d.usage_kb/10)}%"></div>
+                        <div style="font-size:12px;margin-top:4px;color:var(--muted)">Sites: ${d.domains?.slice(0,5).join(', ')||'—'}</div>`;
+        list.appendChild(div);
+      });
+
+      // Domains
+      const dlist=document.getElementById('domainList'); dlist.innerHTML='';
+      let set=new Set(); (data.devices||[]).forEach(d=>d.domains?.forEach(dm=>set.add(dm)));
+      set.forEach(dm=>{let e=document.createElement('div'); e.textContent=dm; dlist.appendChild(e);});
+
+      // Map markers
+      if(map){ map.eachLayer(l=>{ if(l.options&&l.options.pane==="markerPane") map.removeLayer(l); }); }
+      (data.devices||[]).forEach(d=>{
+        if(d.geo){ 
+          let marker=L.marker([d.geo.lat,d.geo.lon]).addTo(map);
+          marker.bindPopup(`<b>${d.hostname||d.ip}</b><br>${d.ip}<br>${d.geo.city||''}, ${d.geo.country||''}`);
+        }
+      });
+    }
+
+    function initMap(){
+      if(!map){ 
+        map=L.map('map').setView([20,80],3);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map); 
+      }
+    }
+
+    // Web Notification
+    function showNotification(msg){
+      if(Notification.permission==="granted") new Notification("Network Alert",{body:msg});
+    }
+    if(Notification.permission!=="granted") Notification.requestPermission();
+
+    // Device actions
+    function blockDevice(ip){ fetch(`/block?ip=${ip}`); alert("Blocked "+ip); }
+    function renameDevice(ip){ let name=prompt("Enter new name for "+ip); if(name) fetch(`/rename?ip=${ip}&name=${name}`); }
+    function trustDevice(ip){ fetch(`/trust?ip=${ip}`); alert("Trusted "+ip); }
+
+    // Export
+    function exportData(type){ window.location=`/export?type=${type}`; }
+
+    document.getElementById('btnCapture').onclick=async()=>{await fetch('/capture',{method:'POST'}); refreshData();};
+    document.getElementById('btnRefresh').onclick=refreshData;
+    refreshData();
+  </script>
+</body>
+</html>
