@@ -3,3 +3,4 @@ reportlab
 openpyxl
 requests
 gunicorn
+pandas
