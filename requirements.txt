@@ -1,0 +1,7 @@
+flask
+reportlab
+openpyxl
+requests
+gunicorn
+pandas
+fpdf
