@@ -4,3 +4,4 @@ openpyxl
 requests
 gunicorn
 pandas
+fpdf
